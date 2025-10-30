@@ -5,7 +5,7 @@ import axios from "axios";
 export const userDataContext = createContext();
 
 function UserContext({ children }) {
-  const serverUrl = "https://virt-assistant-1.onrender.com/";
+  const serverUrl = "https://virt-assistant-1.onrender.com";
 
   const [userdata, setuserdata] = useState(null);
   const [frontImage, setFrontImage] = useState(null);
@@ -27,7 +27,7 @@ function UserContext({ children }) {
   const getGeminiResponse = async (command) => {
   try {
     const result = await axios.post(
-      `${serverUrl}/api/user/asktoassistant`,
+      `https://virt-assistant-1.onrender.com/api/user/asktoassistant`,
       { command, userId: userdata?._id },
       { withCredentials: true }
     );
