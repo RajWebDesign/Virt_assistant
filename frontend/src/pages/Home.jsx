@@ -15,49 +15,42 @@ function Home() {
   const [history, setHistory] = useState([]);
 
   const recognitionRef = useRef(null);
-  const synth = window.speechSynthesis;
   const isSpeakingRef = useRef(false);
+  const synth = window.speechSynthesis;
 
-  const speak = (text) => {
+  const speak = (text, callback) => {
     if (!text) return;
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    isSpeakingRef.current = true;
     utterance.onend = () => {
       isSpeakingRef.current = false;
-      setTimeout(() => {
-        startListening();
-      }, 1000);
+      if (callback) callback();
     };
+    isSpeakingRef.current = true;
     synth.speak(utterance);
   };
 
   const handleSignOut = async () => {
     try {
-      await axios.get("https://virt-assistant-1.onrender.com/api/auth/logout", { withCredentials: true });
+      await axios.get(`https://virt-assistant-1.onrender.com/api/auth/logout`, { withCredentials: true });
       setuserdata(null);
       navigate("/signup");
-    } catch {
+    } catch (error) {
       setuserdata(null);
     }
   };
 
   const handleCustomize = () => navigate("/customize");
 
-  const startListening = () => {
-    const recognition = recognitionRef.current;
-    if (recognition) {
-      try {
-        recognition.start();
-      } catch (err) {
-        if (err.name !== "InvalidStateError") console.log(err);
-      }
-    }
-  };
-
-  const stopListening = () => {
-    const recognition = recognitionRef.current;
-    if (recognition) recognition.stop();
+  const handleOpenAction = (text) => {
+    const t = text.toLowerCase();
+    if (t.includes("open instagram")) window.open("https://www.instagram.com", "_blank");
+    else if (t.includes("open youtube")) window.open("https://www.youtube.com", "_blank");
+    else if (t.includes("open google")) window.open("https://www.google.com", "_blank");
+    else if (t.includes("open facebook")) window.open("https://www.facebook.com", "_blank");
+    else if (t.includes("open twitter") || t.includes("open x")) window.open("https://x.com", "_blank");
+    else if (t.includes("open linkedin")) window.open("https://www.linkedin.com", "_blank");
+    else if (t.includes("open github")) window.open("https://github.com", "_blank");
   };
 
   useEffect(() => {
@@ -73,47 +66,52 @@ function Home() {
     recognition.interimResults = false;
     recognitionRef.current = recognition;
 
-    recognition.onstart = () => {
-      setListening(true);
+    const startRecognition = () => {
+      if (isSpeakingRef.current) return;
+      try {
+        recognition.start();
+        setListening(true);
+      } catch (e) {
+        if (e.name !== "InvalidStateError") console.log(e);
+      }
     };
 
     recognition.onend = () => {
       setListening(false);
       if (!isSpeakingRef.current) {
-        setTimeout(() => startListening(), 1000);
+        setTimeout(() => startRecognition(), 800);
       }
     };
 
-    recognition.onerror = (event) => {
-      console.log("Speech error:", event.error);
+    recognition.onerror = () => {
       setListening(false);
-      if (event.error !== "aborted") {
-        setTimeout(() => startListening(), 1500);
-      }
+      setTimeout(() => startRecognition(), 1200);
     };
 
-    recognition.onresult = async (event) => {
-      const transcript = event.results[event.results.length - 1][0].transcript.trim();
+    recognition.onresult = async (e) => {
+      const transcript = e.results[e.results.length - 1][0].transcript.trim();
       setUserText(transcript);
 
-      if (userdata?.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
+      if (
+        userdata?.assistantName &&
+        transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())
+      ) {
+        handleOpenAction(transcript);
         try {
           const data = await getGeminiResponse(transcript);
-          const response = data.response || "Sorry I could not process that.";
+          const response = data.response || "Sorry, I could not process that.";
           setAiText(response);
           setHistory((prev) => [...prev, { user: transcript, ai: response }]);
-          speak(response);
+          speak(response, () => startRecognition());
         } catch (err) {
-          console.log(err);
+          console.log("Gemini error:", err);
+          speak("Sorry, there was a problem.", () => startRecognition());
         }
       }
     };
 
-    startListening();
-
-    return () => {
-      stopListening();
-    };
+    startRecognition();
+    return () => recognition.stop();
   }, [userdata]);
 
   return (
@@ -138,26 +136,16 @@ function Home() {
 
       <div className="flex-1 flex flex-col justify-center items-center gap-6">
         <div className="absolute top-6 right-6 flex flex-col gap-4 items-end">
-          <button
-            onClick={handleCustomize}
-            className="bg-white text-[#3b3bbd] font-semibold text-[17px] px-6 py-2 rounded-full shadow-md hover:bg-[#3b3bbd] hover:text-white transition-all duration-300"
-          >
+          <button onClick={handleCustomize} className="bg-white text-[#3b3bbd] font-semibold text-[17px] px-6 py-2 rounded-full shadow-md hover:bg-[#3b3bbd] hover:text-white transition-all duration-300">
             Customize Assistant
           </button>
-          <button
-            onClick={handleSignOut}
-            className="bg-white text-[#3b3bbd] font-semibold text-[17px] px-6 py-2 rounded-full shadow-md hover:bg-[#3b3bbd] hover:text-white transition-all duration-300"
-          >
+          <button onClick={handleSignOut} className="bg-white text-[#3b3bbd] font-semibold text-[17px] px-6 py-2 rounded-full shadow-md hover:bg-[#3b3bbd] hover:text-white transition-all duration-300">
             Sign Out
           </button>
         </div>
 
         <div className="w-[250px] h-[330px] flex justify-center items-center overflow-hidden rounded-[25px] shadow-xl border-2 border-white">
-          <img
-            src={userdata?.assistantImage}
-            alt={userdata?.assistantName || "Assistant"}
-            className="h-full object-cover"
-          />
+          <img src={userdata?.assistantImage} alt={userdata?.assistantName || "Assistant"} className="h-full object-cover" />
         </div>
 
         <h1 className="text-white text-2xl font-semibold">
@@ -173,7 +161,7 @@ function Home() {
         </div>
 
         <p className="text-white opacity-80 text-lg mt-2">
-          {listening ? "Listening" : "Inactive"}
+          {listening ? "Listening..." : "Inactive"}
         </p>
       </div>
     </div>
