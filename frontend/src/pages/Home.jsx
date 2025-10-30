@@ -20,24 +20,19 @@ function Home() {
   const isSpeakingRef = useRef(false);
   const synth = window.speechSynthesis;
 
-
   const speak = (text) => {
     if (!text) return;
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     isSpeakingRef.current = true;
-
     utterance.onend = () => {
-      console.log("🔊 Speaking finished");
       isSpeakingRef.current = false;
       setTimeout(() => {
         if (startRecognitionRef.current) startRecognitionRef.current();
       }, 1000);
     };
-
     synth.speak(utterance);
   };
-
 
   const handleSignOut = async () => {
     try {
@@ -45,23 +40,15 @@ function Home() {
       setuserdata(null);
       navigate("/signup");
     } catch (error) {
-      console.error(error);
       setuserdata(null);
     }
   };
 
   const handleCustomize = () => navigate("/customize");
 
-
   useEffect(() => {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      console.error("Speech Recognition not supported in this browser.");
-      return;
-    }
-
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.continuous = true;
@@ -72,23 +59,19 @@ function Home() {
       if (isRecognizingRef.current || isSpeakingRef.current) return;
       try {
         recognition.start();
-        console.log("🎤 Listening started...");
       } catch (e) {
-        if (e.name !== "InvalidStateError")
-          console.error("Start recognition error:", e);
+        if (e.name !== "InvalidStateError") console.log(e);
       }
     };
     startRecognitionRef.current = startRecognition;
 
     recognition.onstart = () => {
       isRecognizingRef.current = true;
-      console.log("✅ Recognition started");
       setListening(true);
     };
 
     recognition.onend = () => {
       isRecognizingRef.current = false;
-      console.log("🛑 Recognition ended");
       setListening(false);
       if (!isSpeakingRef.current) {
         setTimeout(() => startRecognition(), 1000);
@@ -96,7 +79,6 @@ function Home() {
     };
 
     recognition.onerror = (event) => {
-      console.warn("⚠️ Recognition error:", event.error);
       isRecognizingRef.current = false;
       setListening(false);
       if (event.error !== "aborted" && !isSpeakingRef.current) {
@@ -106,24 +88,43 @@ function Home() {
 
     recognition.onresult = async (e) => {
       const transcript = e.results[e.results.length - 1][0].transcript.trim();
-      console.log("🗣️ Heard:", transcript);
       setUserText(transcript);
 
-      if (
-        userdata?.assistantName &&
-        transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())
-      ) {
-        let data = { type: "general", response: "Sorry, I couldn't process that." };
+      if (userdata?.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
+        let data = { type: "general", response: "Sorry I could not process that." };
         try {
           data = await getGeminiResponse(transcript);
-          setAiText(data.response);
-          setHistory((prev) => [
-            ...prev,
-            { user: transcript, ai: data.response },
-          ]);
-          speak(data.response);
+          let parsedData;
+          try {
+            parsedData = typeof data === "string" ? JSON.parse(data) : data;
+          } catch {
+            parsedData = data;
+          }
+          setAiText(parsedData.response);
+          setHistory((prev) => [...prev, { user: transcript, ai: parsedData.response }]);
+          speak(parsedData.response);
+
+          switch (parsedData.type) {
+            case "instagram_open":
+              window.open("https://www.instagram.com", "_blank");
+              break;
+            case "facebook_open":
+              window.open("https://www.facebook.com", "_blank");
+              break;
+            case "youtube_search":
+              window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(parsedData.userInput || transcript)}`, "_blank");
+              break;
+            case "google_search":
+              window.open(`https://www.google.com/search?q=${encodeURIComponent(parsedData.userInput || transcript)}`, "_blank");
+              break;
+            case "weather_show":
+              window.open(`https://www.google.com/search?q=weather+${encodeURIComponent(parsedData.userInput || transcript)}`, "_blank");
+              break;
+            default:
+              break;
+          }
         } catch (err) {
-          console.error("Gemini fetch error:", err);
+          console.log(err);
         }
       }
     };
@@ -131,7 +132,6 @@ function Home() {
     startRecognition();
 
     return () => {
-      console.log("🧹 Cleaning up recognition...");
       recognition.stop();
       isRecognizingRef.current = false;
     };
@@ -139,21 +139,15 @@ function Home() {
 
   return (
     <div className="relative w-full h-screen bg-gradient-to-t from-black to-[#3b3bbd] flex">
-
-     
       <div className="w-[300px] bg-black/30 border-r border-white/20 p-4 overflow-y-auto">
-        <h2 className="text-white text-2xl font-semibold mb-4 text-center">
-          🕒 History
-        </h2>
+        <h2 className="text-white text-2xl font-semibold mb-4 text-center">History</h2>
         {history.length === 0 ? (
           <p className="text-gray-300 text-center italic">No chats yet</p>
         ) : (
           <ul className="space-y-3">
             {history.map((item, index) => (
               <li key={index} className="bg-white/10 p-3 rounded-xl text-white">
-                <p className="text-yellow-300 text-sm italic">
-                  You: {item.user}
-                </p>
+                <p className="text-yellow-300 text-sm italic">You: {item.user}</p>
                 <p className="text-green-300 text-sm mt-1">
                   {userdata?.assistantName || "AI"}: {item.ai}
                 </p>
@@ -163,10 +157,7 @@ function Home() {
         )}
       </div>
 
-
       <div className="flex-1 flex flex-col justify-center items-center gap-6">
-
-    
         <div className="absolute top-6 right-6 flex flex-col gap-4 items-end">
           <button
             onClick={handleCustomize}
@@ -182,7 +173,6 @@ function Home() {
           </button>
         </div>
 
-       
         <div className="w-[250px] h-[330px] flex justify-center items-center overflow-hidden rounded-[25px] shadow-xl border-2 border-white">
           <img
             src={userdata?.assistantImage}
@@ -195,16 +185,11 @@ function Home() {
           I am {userdata?.assistantName || "Your Virtual Assistant"}
         </h1>
 
-    
         {!aiText && <img src={userImg} alt="" className="w-[80px]" />}
         {aiText && <img src={aiImg} alt="" className="w-[80px]" />}
 
         <div className="text-center text-white mt-3">
-          {userText && (
-            <p className="text-base italic text-yellow-300">
-              You said: "{userText}"
-            </p>
-          )}
+          {userText && <p className="text-base italic text-yellow-300">You said: "{userText}"</p>}
           {aiText && (
             <p className="text-base text-green-300 mt-2">
               {userdata?.assistantName || "AI"}: {aiText}
@@ -213,7 +198,7 @@ function Home() {
         </div>
 
         <p className="text-white opacity-80 text-lg mt-2">
-          {listening ? "🎙️ Listening..." : "🔇 Inactive"}
+          {listening ? "Listening" : "Inactive"}
         </p>
       </div>
     </div>
