@@ -32,7 +32,7 @@ function Home() {
 
   const handleSignOut = async () => {
     try {
-      await axios.get(`http://localhost:8000/api/auth/logout`, { withCredentials: true });
+      await axios.get(`https://virt-assistant-1.onrender.com/api/auth/logout`, { withCredentials: true });
       setuserdata(null);
       navigate("/signup");
     } catch (error) {
