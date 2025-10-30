@@ -20,7 +20,7 @@ function SignIn() {
     setErr("")
     setloading(true)
     try {
-      let result = await axios.post(`${serverUrl}/api/auth/signin`, {
+      let result = await axios.post(`https://virt-assistant-1.onrender.com/api/auth/signin`, {
          email, password
       }, { withCredentials: true })
       
