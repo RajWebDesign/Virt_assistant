@@ -15,30 +15,21 @@ function Home() {
   const [history, setHistory] = useState([]);
 
   const recognitionRef = useRef(null);
-  const startRecognitionRef = useRef(null);
-  const isRecognizingRef = useRef(false);
   const isSpeakingRef = useRef(false);
-  const synth = window.speechSynthesis;
 
-  // Speak assistant response
   const speak = (text) => {
     if (!text) return;
-    if (recognitionRef.current && isRecognizingRef.current) recognitionRef.current.stop();
-    synth.cancel();
+    if (recognitionRef.current) recognitionRef.current.stop();
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utter = new SpeechSynthesisUtterance(text);
     isSpeakingRef.current = true;
-
-    utterance.onend = () => {
+    utter.onend = () => {
       isSpeakingRef.current = false;
-      // Restart recognition immediately
-      if (startRecognitionRef.current) startRecognitionRef.current();
+      if (recognitionRef.current) recognitionRef.current.start();
     };
-
-    synth.speak(utterance);
+    window.speechSynthesis.speak(utter);
   };
 
-  // Sign out
   const handleSignOut = async () => {
     try {
       await axios.get(`http://localhost:8000/api/auth/logout`, { withCredentials: true });
@@ -54,51 +45,37 @@ function Home() {
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      console.error("Speech Recognition not supported in this browser.");
+    if (!SpeechRecognition || !userdata) {
+      console.error("Speech Recognition not supported.");
       return;
     }
 
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
-    recognition.continuous = true;
-    recognition.interimResults = true; // Live transcription
+    recognition.continuous = false; // manual restart loop
+    recognition.interimResults = true;
     recognitionRef.current = recognition;
 
     const startRecognition = () => {
-      if (isRecognizingRef.current || isSpeakingRef.current) return;
+      if (isSpeakingRef.current) return;
       try {
         recognition.start();
-        console.log("🎤 Listening started...");
-      } catch (e) {
-        if (e.name !== "InvalidStateError") console.error("Start recognition error:", e);
-      }
+        setListening(true);
+      } catch {}
     };
-    startRecognitionRef.current = startRecognition;
 
-    recognition.onstart = () => {
-      isRecognizingRef.current = true;
-      setListening(true);
-      console.log("✅ Recognition started");
-    };
+    recognition.onstart = () => setListening(true);
 
     recognition.onend = () => {
-      isRecognizingRef.current = false;
       setListening(false);
-      console.log("🛑 Recognition ended");
       if (!isSpeakingRef.current) {
-        setTimeout(() => startRecognition(), 500);
+        setTimeout(() => startRecognition(), 300);
       }
     };
 
     recognition.onerror = (event) => {
-      console.warn("⚠️ Recognition error:", event.error);
-      isRecognizingRef.current = false;
       setListening(false);
-      if (event.error !== "aborted" && !isSpeakingRef.current) {
-        setTimeout(() => startRecognition(), 1000);
-      }
+      setTimeout(() => startRecognition(), 500);
     };
 
     recognition.onresult = async (e) => {
@@ -108,12 +85,11 @@ function Home() {
       }
       transcript = transcript.trim();
       setUserText(transcript);
-      console.log("🗣️ Heard:", transcript);
 
       if (userdata?.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
-        let data = { type: "general", response: "Sorry, I couldn't process that." };
+        recognition.stop();
         try {
-          data = await getGeminiResponse(transcript);
+          const data = await getGeminiResponse(transcript);
           setAiText(data.response);
           setHistory((prev) => [...prev, { user: transcript, ai: data.response }]);
           speak(data.response);
@@ -123,31 +99,25 @@ function Home() {
       }
     };
 
-    // Start recognition initially
     startRecognition();
 
-    // Cleanup on unmount
     return () => {
-      console.log("🧹 Cleaning up recognition...");
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-        recognitionRef.current = null;
-      }
-      isRecognizingRef.current = false;
+      recognition.stop();
+      recognitionRef.current = null;
     };
   }, [userdata]);
 
   return (
     <div className="relative w-full h-screen bg-gradient-to-t from-black to-[#3b3bbd] flex">
-      {/* Sidebar - Chat History */}
+      {/* Sidebar */}
       <div className="w-[300px] bg-black/30 border-r border-white/20 p-4 overflow-y-auto">
         <h2 className="text-white text-2xl font-semibold mb-4 text-center">🕒 History</h2>
         {history.length === 0 ? (
           <p className="text-gray-300 text-center italic">No chats yet</p>
         ) : (
           <ul className="space-y-3">
-            {history.map((item, index) => (
-              <li key={index} className="bg-white/10 p-3 rounded-xl text-white">
+            {history.map((item, idx) => (
+              <li key={idx} className="bg-white/10 p-3 rounded-xl text-white">
                 <p className="text-yellow-300 text-sm italic">You: {item.user}</p>
                 <p className="text-green-300 text-sm mt-1">
                   {userdata?.assistantName || "AI"}: {item.ai}
@@ -198,6 +168,14 @@ function Home() {
         </div>
 
         <p className="text-white opacity-80 text-lg mt-2">{listening ? "🎙️ Listening..." : "🔇 Inactive"}</p>
+
+        {/* Optional Mic Button */}
+        <button
+          onClick={() => recognitionRef.current?.start()}
+          className="mt-4 px-4 py-2 bg-yellow-400 text-black rounded-full font-semibold"
+        >
+          🎤 Start Listening
+        </button>
       </div>
     </div>
   );
