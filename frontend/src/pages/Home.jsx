@@ -1,17 +1,17 @@
-import React, { useContext, useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useContext } from "react";
+import axios from "axios";
 import { userDataContext } from "../context/UserContext";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
 import aiImg from "../assets/ai.gif";
 import userImg from "../assets/user.gif";
 
 function Home() {
-  const { userdata, setuserdata, getGeminiResponse } = useContext(userDataContext);
+  const { userdata, setuserdata } = useContext(userDataContext);
   const navigate = useNavigate();
   const [userText, setUserText] = useState("");
   const [aiText, setAiText] = useState("");
-  const [listening, setListening] = useState(false);
   const [history, setHistory] = useState([]);
+  const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
   const isSpeakingRef = useRef(false);
   const synth = window.speechSynthesis;
@@ -19,13 +19,13 @@ function Home() {
   const speak = (text, callback) => {
     if (!text) return;
     synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.onend = () => {
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.onend = () => {
       isSpeakingRef.current = false;
       if (callback) callback();
     };
     isSpeakingRef.current = true;
-    synth.speak(utterance);
+    synth.speak(utter);
   };
 
   const handleSignOut = async () => {
@@ -33,90 +33,87 @@ function Home() {
       await axios.get(`https://virt-assistant-1.onrender.com/api/auth/logout`, { withCredentials: true });
       setuserdata(null);
       navigate("/signup");
-    } catch {
+    } catch (error) {
       setuserdata(null);
     }
   };
 
-  const handleCustomize = () => navigate("/customize");
-
-  const handleOpenAction = (text) => {
-    const t = text.toLowerCase();
-    if (t.includes("open instagram")) window.open("https://www.instagram.com", "_blank");
-    else if (t.includes("open youtube")) window.open("https://www.youtube.com", "_blank");
-    else if (t.includes("open google")) window.open("https://www.google.com", "_blank");
-    else if (t.includes("open facebook")) window.open("https://www.facebook.com", "_blank");
-    else if (t.includes("open twitter") || t.includes("open x")) window.open("https://x.com", "_blank");
-    else if (t.includes("open linkedin")) window.open("https://www.linkedin.com", "_blank");
-    else if (t.includes("open github")) window.open("https://github.com", "_blank");
+  const handleAction = (type, userInput) => {
+    switch (type) {
+      case "google_search":
+        window.open(`https://www.google.com/search?q=${encodeURIComponent(userInput)}`, "_blank");
+        break;
+      case "youtube_search":
+      case "youtube_play":
+        window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(userInput)}`, "_blank");
+        break;
+      case "instagram_open":
+        window.open("https://www.instagram.com", "_blank");
+        break;
+      case "facebook_open":
+        window.open("https://www.facebook.com", "_blank");
+        break;
+      case "calculator_open":
+        window.open("calculator://", "_blank");
+        break;
+      case "weather_show":
+        window.open(`https://www.google.com/search?q=weather`, "_blank");
+        break;
+      default:
+        break;
+    }
   };
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.log("Speech Recognition not supported");
-      return;
-    }
-
+    if (!SpeechRecognition) return;
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.continuous = true;
     recognition.interimResults = false;
     recognitionRef.current = recognition;
-    let restartTimeout;
 
-    const startRecognition = () => {
+    const startListening = () => {
       if (isSpeakingRef.current) return;
-      clearTimeout(restartTimeout);
       try {
         recognition.start();
         setListening(true);
-      } catch (e) {
-        if (e.name !== "InvalidStateError") console.log(e);
-      }
+      } catch (e) {}
     };
 
-    const stopRecognitionTemporarily = () => {
-      try {
-        recognition.stop();
-        setListening(false);
-      } catch {}
+    recognition.onend = () => {
+      setListening(false);
+      if (!isSpeakingRef.current) setTimeout(startListening, 200);
+    };
+
+    recognition.onerror = () => {
+      setListening(false);
+      setTimeout(startListening, 400);
     };
 
     recognition.onresult = async (e) => {
       const transcript = e.results[e.results.length - 1][0].transcript.trim();
       setUserText(transcript);
       if (userdata?.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
-        stopRecognitionTemporarily();
-        handleOpenAction(transcript);
         try {
-          const data = await getGeminiResponse(transcript);
-          const response = data.response || "Sorry, I could not process that.";
-          setAiText(response);
-          setHistory((prev) => [...prev, { user: transcript, ai: response }]);
-          speak(response, () => startRecognition());
-        } catch {
-          speak("Sorry, there was a problem.", () => startRecognition());
+          const res = await axios.post(
+            "https://virt-assistant-1.onrender.com/api/assistant/ask",
+            { command: transcript, userId: userdata._id },
+            { withCredentials: true }
+          );
+          const data = res.data;
+          setAiText(data.response);
+          setHistory((prev) => [...prev, { user: transcript, ai: data.response }]);
+          handleAction(data.type, data.userInput);
+          speak(data.response, () => startListening());
+        } catch (err) {
+          speak("Sorry, something went wrong.", () => startListening());
         }
       }
     };
 
-    recognition.onerror = () => {
-      setListening(false);
-      restartTimeout = setTimeout(() => startRecognition(), 400);
-    };
-
-    recognition.onend = () => {
-      if (!isSpeakingRef.current) {
-        restartTimeout = setTimeout(() => startRecognition(), 300);
-      }
-    };
-
-    startRecognition();
-    return () => {
-      clearTimeout(restartTimeout);
-      recognition.stop();
-    };
+    startListening();
+    return () => recognition.stop();
   }, [userdata]);
 
   return (
@@ -136,25 +133,37 @@ function Home() {
           </ul>
         )}
       </div>
+
       <div className="flex-1 flex flex-col justify-center items-center gap-6">
         <div className="absolute top-6 right-6 flex flex-col gap-4 items-end">
-          <button onClick={handleCustomize} className="bg-white text-[#3b3bbd] font-semibold text-[17px] px-6 py-2 rounded-full shadow-md hover:bg-[#3b3bbd] hover:text-white transition-all duration-300">
+          <button
+            onClick={() => navigate("/customize")}
+            className="bg-white text-[#3b3bbd] font-semibold text-[17px] px-6 py-2 rounded-full shadow-md hover:bg-[#3b3bbd] hover:text-white transition-all duration-300"
+          >
             Customize Assistant
           </button>
-          <button onClick={handleSignOut} className="bg-white text-[#3b3bbd] font-semibold text-[17px] px-6 py-2 rounded-full shadow-md hover:bg-[#3b3bbd] hover:text-white transition-all duration-300">
+          <button
+            onClick={handleSignOut}
+            className="bg-white text-[#3b3bbd] font-semibold text-[17px] px-6 py-2 rounded-full shadow-md hover:bg-[#3b3bbd] hover:text-white transition-all duration-300"
+          >
             Sign Out
           </button>
         </div>
+
         <div className="w-[250px] h-[330px] flex justify-center items-center overflow-hidden rounded-[25px] shadow-xl border-2 border-white">
           <img src={userdata?.assistantImage} alt={userdata?.assistantName || "Assistant"} className="h-full object-cover" />
         </div>
+
         <h1 className="text-white text-2xl font-semibold">I am {userdata?.assistantName || "Your Virtual Assistant"}</h1>
+
         {!aiText && <img src={userImg} alt="" className="w-[80px]" />}
         {aiText && <img src={aiImg} alt="" className="w-[80px]" />}
+
         <div className="text-center text-white mt-3">
           {userText && <p className="text-base italic text-yellow-300">You said: "{userText}"</p>}
           {aiText && <p className="text-base text-green-300 mt-2">{userdata?.assistantName || "AI"}: {aiText}</p>}
         </div>
+
         <p className="text-white opacity-80 text-lg mt-2">{listening ? "Listening..." : "Inactive"}</p>
       </div>
     </div>
