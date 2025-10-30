@@ -21,12 +21,12 @@ function Home() {
   // Speak text safely
   const speak = (text, callback) => {
     if (!text || !synth) return;
-    if (synth.speaking) synth.cancel();
+    if (recognitionRef.current) recognitionRef.current.stop(); // stop recognition while speaking
     const utter = new SpeechSynthesisUtterance(text);
     isSpeakingRef.current = true;
     utter.onend = () => {
       isSpeakingRef.current = false;
-      if (callback) callback();
+      if (callback) callback(); // restart listening
     };
     synth.speak(utter);
   };
@@ -77,7 +77,7 @@ function Home() {
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.continuous = true;
-    recognition.interimResults = false;
+    recognition.interimResults = true; // show live text
     recognitionRef.current = recognition;
 
     const startListening = () => {
@@ -96,21 +96,12 @@ function Home() {
       } catch {}
     };
 
-    recognition.onstart = () => setListening(true);
-
-    recognition.onend = () => {
-      setListening(false);
-      if (!isSpeakingRef.current) setTimeout(() => startListening(), 200);
-    };
-
-    recognition.onerror = () => {
-      setListening(false);
-      setTimeout(() => startListening(), 500);
-    };
-
     recognition.onresult = async (e) => {
-      const transcript = e.results[e.results.length - 1][0].transcript.trim();
-      setUserText(transcript);
+      let transcript = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        transcript += e.results[i][0].transcript;
+      }
+      setUserText(transcript.trim());
 
       if (userdata.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
         stopListening();
@@ -130,6 +121,14 @@ function Home() {
           speak("Sorry, something went wrong.", () => startListening());
         }
       }
+    };
+
+    recognition.onend = () => {
+      if (!isSpeakingRef.current) startListening(); // restart recognition automatically
+    };
+
+    recognition.onerror = () => {
+      setTimeout(() => startListening(), 500);
     };
 
     startListening();
