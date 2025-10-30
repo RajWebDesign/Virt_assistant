@@ -52,7 +52,7 @@ function Home() {
 
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
-    recognition.continuous = false; // manual restart loop
+    recognition.continuous = true; // manual restart loop
     recognition.interimResults = true;
     recognitionRef.current = recognition;
 
