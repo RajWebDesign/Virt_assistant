@@ -5,7 +5,7 @@ import axios from "axios";
 export const userDataContext = createContext();
 
 function UserContext({ children }) {
-  const serverUrl = "http://localhost:8000";
+  const serverUrl = "https://virt-assistant-1.onrender.com/";
 
   const [userdata, setuserdata] = useState(null);
   const [frontImage, setFrontImage] = useState(null);
