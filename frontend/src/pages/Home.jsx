@@ -1,99 +1,104 @@
-import React, { useEffect, useState, useRef, useContext } from "react";
-import axios from "axios";
+import React, { useContext, useEffect, useState, useRef } from "react";
 import { userDataContext } from "../context/UserContext";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import aiImg from "../assets/ai.gif";
 import userImg from "../assets/user.gif";
 
 function Home() {
-  const { userdata, setuserdata } = useContext(userDataContext);
+  const { userdata, setuserdata, getGeminiResponse } = useContext(userDataContext);
   const navigate = useNavigate();
 
   const [userText, setUserText] = useState("");
   const [aiText, setAiText] = useState("");
-  const [history, setHistory] = useState([]);
   const [listening, setListening] = useState(false);
+  const [history, setHistory] = useState([]);
 
   const recognitionRef = useRef(null);
+  const startRecognitionRef = useRef(null);
+  const isRecognizingRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const synth = window.speechSynthesis;
 
-  // Speak text safely
-  const speak = (text, callback) => {
-    if (!text || !synth) return;
-    if (recognitionRef.current) recognitionRef.current.stop(); // stop recognition while speaking
-    const utter = new SpeechSynthesisUtterance(text);
+  // Speak assistant response
+  const speak = (text) => {
+    if (!text) return;
+    if (recognitionRef.current && isRecognizingRef.current) recognitionRef.current.stop();
+    synth.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
     isSpeakingRef.current = true;
-    utter.onend = () => {
+
+    utterance.onend = () => {
       isSpeakingRef.current = false;
-      if (callback) callback(); // restart listening
+      // Restart recognition immediately
+      if (startRecognitionRef.current) startRecognitionRef.current();
     };
-    synth.speak(utter);
+
+    synth.speak(utterance);
   };
 
   // Sign out
   const handleSignOut = async () => {
     try {
-      await axios.get("https://virt-assistant-1.onrender.com/api/auth/logout", { withCredentials: true });
+      await axios.get(`http://localhost:8000/api/auth/logout`, { withCredentials: true });
       setuserdata(null);
       navigate("/signup");
-    } catch {
+    } catch (error) {
+      console.error(error);
       setuserdata(null);
     }
   };
 
-  // Handle assistant actions
-  const handleAction = (type, userInput) => {
-    switch (type) {
-      case "google_search":
-        window.open(`https://www.google.com/search?q=${encodeURIComponent(userInput)}`, "_blank");
-        break;
-      case "youtube_search":
-      case "youtube_play":
-        window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(userInput)}`, "_blank");
-        break;
-      case "instagram_open":
-        window.open("https://www.instagram.com", "_blank");
-        break;
-      case "facebook_open":
-        window.open("https://www.facebook.com", "_blank");
-        break;
-      case "calculator_open":
-        alert("Calculator not supported on web!");
-        break;
-      case "weather_show":
-        window.open("https://www.google.com/search?q=weather", "_blank");
-        break;
-      default:
-        break;
-    }
-  };
+  const handleCustomize = () => navigate("/customize");
 
-  // Speech recognition setup
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition || !userdata) return;
+
+    if (!SpeechRecognition) {
+      console.error("Speech Recognition not supported in this browser.");
+      return;
+    }
 
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.continuous = true;
-    recognition.interimResults = true; // show live text
+    recognition.interimResults = true; // Live transcription
     recognitionRef.current = recognition;
 
-    const startListening = () => {
-      if (!recognitionRef.current || isSpeakingRef.current) return;
+    const startRecognition = () => {
+      if (isRecognizingRef.current || isSpeakingRef.current) return;
       try {
-        recognitionRef.current.start();
-        setListening(true);
-      } catch {}
+        recognition.start();
+        console.log("🎤 Listening started...");
+      } catch (e) {
+        if (e.name !== "InvalidStateError") console.error("Start recognition error:", e);
+      }
+    };
+    startRecognitionRef.current = startRecognition;
+
+    recognition.onstart = () => {
+      isRecognizingRef.current = true;
+      setListening(true);
+      console.log("✅ Recognition started");
     };
 
-    const stopListening = () => {
-      if (!recognitionRef.current) return;
-      try {
-        recognitionRef.current.stop();
-        setListening(false);
-      } catch {}
+    recognition.onend = () => {
+      isRecognizingRef.current = false;
+      setListening(false);
+      console.log("🛑 Recognition ended");
+      if (!isSpeakingRef.current) {
+        setTimeout(() => startRecognition(), 500);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.warn("⚠️ Recognition error:", event.error);
+      isRecognizingRef.current = false;
+      setListening(false);
+      if (event.error !== "aborted" && !isSpeakingRef.current) {
+        setTimeout(() => startRecognition(), 1000);
+      }
     };
 
     recognition.onresult = async (e) => {
@@ -101,41 +106,34 @@ function Home() {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         transcript += e.results[i][0].transcript;
       }
-      setUserText(transcript.trim());
+      transcript = transcript.trim();
+      setUserText(transcript);
+      console.log("🗣️ Heard:", transcript);
 
-      if (userdata.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
-        stopListening();
+      if (userdata?.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
+        let data = { type: "general", response: "Sorry, I couldn't process that." };
         try {
-          const res = await axios.post(
-            "https://virt-assistant-1.onrender.com/api/assistant/ask",
-            { command: transcript, userId: userdata._id },
-            { withCredentials: true }
-          );
-
-          const data = res.data;
+          data = await getGeminiResponse(transcript);
           setAiText(data.response);
           setHistory((prev) => [...prev, { user: transcript, ai: data.response }]);
-          handleAction(data.type, data.userInput);
-          speak(data.response, () => startListening());
-        } catch {
-          speak("Sorry, something went wrong.", () => startListening());
+          speak(data.response);
+        } catch (err) {
+          console.error("Gemini fetch error:", err);
         }
       }
     };
 
-    recognition.onend = () => {
-      if (!isSpeakingRef.current) startListening(); // restart recognition automatically
-    };
+    // Start recognition initially
+    startRecognition();
 
-    recognition.onerror = () => {
-      setTimeout(() => startListening(), 500);
-    };
-
-    startListening();
-
+    // Cleanup on unmount
     return () => {
-      stopListening();
-      recognitionRef.current = null;
+      console.log("🧹 Cleaning up recognition...");
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
+      isRecognizingRef.current = false;
     };
   }, [userdata]);
 
@@ -143,7 +141,7 @@ function Home() {
     <div className="relative w-full h-screen bg-gradient-to-t from-black to-[#3b3bbd] flex">
       {/* Sidebar - Chat History */}
       <div className="w-[300px] bg-black/30 border-r border-white/20 p-4 overflow-y-auto">
-        <h2 className="text-white text-2xl font-semibold mb-4 text-center">History</h2>
+        <h2 className="text-white text-2xl font-semibold mb-4 text-center">🕒 History</h2>
         {history.length === 0 ? (
           <p className="text-gray-300 text-center italic">No chats yet</p>
         ) : (
@@ -165,7 +163,7 @@ function Home() {
         {/* Buttons */}
         <div className="absolute top-6 right-6 flex flex-col gap-4 items-end">
           <button
-            onClick={() => navigate("/customize")}
+            onClick={handleCustomize}
             className="bg-white text-[#3b3bbd] font-semibold text-[17px] px-6 py-2 rounded-full shadow-md hover:bg-[#3b3bbd] hover:text-white transition-all duration-300"
           >
             Customize Assistant
@@ -191,17 +189,15 @@ function Home() {
           I am {userdata?.assistantName || "Your Virtual Assistant"}
         </h1>
 
-        {/* Speaking Indicator */}
         {!aiText && <img src={userImg} alt="" className="w-[80px]" />}
         {aiText && <img src={aiImg} alt="" className="w-[80px]" />}
 
-        {/* Text Display */}
         <div className="text-center text-white mt-3">
           {userText && <p className="text-base italic text-yellow-300">You said: "{userText}"</p>}
           {aiText && <p className="text-base text-green-300 mt-2">{userdata?.assistantName || "AI"}: {aiText}</p>}
         </div>
 
-        <p className="text-white opacity-80 text-lg mt-2">{listening ? "Listening..." : "Inactive"}</p>
+        <p className="text-white opacity-80 text-lg mt-2">{listening ? "🎙️ Listening..." : "🔇 Inactive"}</p>
       </div>
     </div>
   );
