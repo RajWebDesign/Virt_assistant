@@ -8,17 +8,20 @@ import userImg from "../assets/user.gif";
 function Home() {
   const { userdata, setuserdata } = useContext(userDataContext);
   const navigate = useNavigate();
+
   const [userText, setUserText] = useState("");
   const [aiText, setAiText] = useState("");
   const [history, setHistory] = useState([]);
   const [listening, setListening] = useState(false);
+
   const recognitionRef = useRef(null);
   const isSpeakingRef = useRef(false);
   const synth = window.speechSynthesis;
 
+  // Speak text safely
   const speak = (text, callback) => {
-    if (!text) return;
-    synth.cancel();
+    if (!text || !synth) return;
+    if (synth.speaking) synth.cancel();
     const utter = new SpeechSynthesisUtterance(text);
     isSpeakingRef.current = true;
     utter.onend = () => {
@@ -28,16 +31,18 @@ function Home() {
     synth.speak(utter);
   };
 
+  // Sign out
   const handleSignOut = async () => {
     try {
-      await axios.get(`https://virt-assistant-1.onrender.com/api/auth/logout`, { withCredentials: true });
+      await axios.get("https://virt-assistant-1.onrender.com/api/auth/logout", { withCredentials: true });
       setuserdata(null);
       navigate("/signup");
-    } catch (error) {
+    } catch {
       setuserdata(null);
     }
   };
 
+  // Handle assistant actions
   const handleAction = (type, userInput) => {
     switch (type) {
       case "google_search":
@@ -54,56 +59,60 @@ function Home() {
         window.open("https://www.facebook.com", "_blank");
         break;
       case "calculator_open":
-        window.open("calculator://", "_blank");
+        alert("Calculator not supported on web!");
         break;
       case "weather_show":
-        window.open(`https://www.google.com/search?q=weather`, "_blank");
+        window.open("https://www.google.com/search?q=weather", "_blank");
         break;
       default:
         break;
     }
   };
 
+  // Speech recognition setup
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+    if (!SpeechRecognition || !userdata) return;
 
-    let recognition = new SpeechRecognition();
+    const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.continuous = true;
     recognition.interimResults = false;
     recognitionRef.current = recognition;
 
     const startListening = () => {
-      if (isSpeakingRef.current) return;
+      if (!recognitionRef.current || isSpeakingRef.current) return;
       try {
-        recognition.start();
+        recognitionRef.current.start();
         setListening(true);
       } catch {}
     };
 
     const stopListening = () => {
+      if (!recognitionRef.current) return;
       try {
-        recognition.stop();
+        recognitionRef.current.stop();
         setListening(false);
       } catch {}
     };
 
     recognition.onstart = () => setListening(true);
+
     recognition.onend = () => {
       setListening(false);
-      if (!isSpeakingRef.current) setTimeout(() => startListening(), 100);
+      if (!isSpeakingRef.current) setTimeout(() => startListening(), 200);
     };
 
     recognition.onerror = () => {
       setListening(false);
-      setTimeout(() => startListening(), 300);
+      setTimeout(() => startListening(), 500);
     };
 
     recognition.onresult = async (e) => {
       const transcript = e.results[e.results.length - 1][0].transcript.trim();
       setUserText(transcript);
-      if (userdata?.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
+
+      if (userdata.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
         stopListening();
         try {
           const res = await axios.post(
@@ -111,6 +120,7 @@ function Home() {
             { command: transcript, userId: userdata._id },
             { withCredentials: true }
           );
+
           const data = res.data;
           setAiText(data.response);
           setHistory((prev) => [...prev, { user: transcript, ai: data.response }]);
@@ -123,14 +133,16 @@ function Home() {
     };
 
     startListening();
+
     return () => {
       stopListening();
-      recognition = null;
+      recognitionRef.current = null;
     };
   }, [userdata]);
 
   return (
     <div className="relative w-full h-screen bg-gradient-to-t from-black to-[#3b3bbd] flex">
+      {/* Sidebar - Chat History */}
       <div className="w-[300px] bg-black/30 border-r border-white/20 p-4 overflow-y-auto">
         <h2 className="text-white text-2xl font-semibold mb-4 text-center">History</h2>
         {history.length === 0 ? (
@@ -149,7 +161,9 @@ function Home() {
         )}
       </div>
 
+      {/* Main Area */}
       <div className="flex-1 flex flex-col justify-center items-center gap-6">
+        {/* Buttons */}
         <div className="absolute top-6 right-6 flex flex-col gap-4 items-end">
           <button
             onClick={() => navigate("/customize")}
@@ -165,15 +179,24 @@ function Home() {
           </button>
         </div>
 
+        {/* Assistant Image */}
         <div className="w-[250px] h-[330px] flex justify-center items-center overflow-hidden rounded-[25px] shadow-xl border-2 border-white">
-          <img src={userdata?.assistantImage} alt={userdata?.assistantName || "Assistant"} className="h-full object-cover" />
+          <img
+            src={userdata?.assistantImage || aiImg}
+            alt={userdata?.assistantName || "Assistant"}
+            className="h-full object-cover"
+          />
         </div>
 
-        <h1 className="text-white text-2xl font-semibold">I am {userdata?.assistantName || "Your Virtual Assistant"}</h1>
+        <h1 className="text-white text-2xl font-semibold">
+          I am {userdata?.assistantName || "Your Virtual Assistant"}
+        </h1>
 
+        {/* Speaking Indicator */}
         {!aiText && <img src={userImg} alt="" className="w-[80px]" />}
         {aiText && <img src={aiImg} alt="" className="w-[80px]" />}
 
+        {/* Text Display */}
         <div className="text-center text-white mt-3">
           {userText && <p className="text-base italic text-yellow-300">You said: "{userText}"</p>}
           {aiText && <p className="text-base text-green-300 mt-2">{userdata?.assistantName || "AI"}: {aiText}</p>}
