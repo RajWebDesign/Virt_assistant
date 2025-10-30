@@ -25,9 +25,7 @@ function Home() {
     isSpeakingRef.current = true;
     utterance.onend = () => {
       isSpeakingRef.current = false;
-      setTimeout(() => {
-        startListening();
-      }, 1000);
+      setTimeout(() => startListening(), 1000);
     };
     synth.speak(utterance);
   };
@@ -60,12 +58,34 @@ function Home() {
     if (recognition) recognition.stop();
   };
 
+  const handleOpenAction = (type) => {
+    switch (type) {
+      case "instagram_open":
+        window.open("https://www.instagram.com", "_blank");
+        break;
+      case "facebook_open":
+        window.open("https://www.facebook.com", "_blank");
+        break;
+      case "youtube_search":
+        window.open("https://www.youtube.com", "_blank");
+        break;
+      case "google_search":
+        window.open("https://www.google.com", "_blank");
+        break;
+      case "calculator_open":
+        speak("I cannot open calculator directly from browser.");
+        break;
+      case "weather_show":
+        window.open("https://www.google.com/search?q=weather", "_blank");
+        break;
+      default:
+        break;
+    }
+  };
+
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.log("Speech Recognition not supported");
-      return;
-    }
+    if (!SpeechRecognition) return;
 
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
@@ -85,7 +105,6 @@ function Home() {
     };
 
     recognition.onerror = (event) => {
-      console.log("Speech error:", event.error);
       setListening(false);
       if (event.error !== "aborted") {
         setTimeout(() => startListening(), 1500);
@@ -100,9 +119,13 @@ function Home() {
         try {
           const data = await getGeminiResponse(transcript);
           const response = data.response || "Sorry I could not process that.";
+          const type = data.type || "general";
+
           setAiText(response);
           setHistory((prev) => [...prev, { user: transcript, ai: response }]);
+
           speak(response);
+          handleOpenAction(type);
         } catch (err) {
           console.log(err);
         }
@@ -111,9 +134,7 @@ function Home() {
 
     startListening();
 
-    return () => {
-      stopListening();
-    };
+    return () => stopListening();
   }, [userdata]);
 
   return (
