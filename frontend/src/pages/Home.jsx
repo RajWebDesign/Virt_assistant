@@ -20,11 +20,11 @@ function Home() {
     if (!text) return;
     synth.cancel();
     const utter = new SpeechSynthesisUtterance(text);
+    isSpeakingRef.current = true;
     utter.onend = () => {
       isSpeakingRef.current = false;
       if (callback) callback();
     };
-    isSpeakingRef.current = true;
     synth.speak(utter);
   };
 
@@ -67,7 +67,8 @@ function Home() {
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
-    const recognition = new SpeechRecognition();
+
+    let recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.continuous = true;
     recognition.interimResults = false;
@@ -78,23 +79,32 @@ function Home() {
       try {
         recognition.start();
         setListening(true);
-      } catch (e) {}
+      } catch {}
     };
 
+    const stopListening = () => {
+      try {
+        recognition.stop();
+        setListening(false);
+      } catch {}
+    };
+
+    recognition.onstart = () => setListening(true);
     recognition.onend = () => {
       setListening(false);
-      if (!isSpeakingRef.current) setTimeout(startListening, 200);
+      if (!isSpeakingRef.current) setTimeout(() => startListening(), 100);
     };
 
     recognition.onerror = () => {
       setListening(false);
-      setTimeout(startListening, 400);
+      setTimeout(() => startListening(), 300);
     };
 
     recognition.onresult = async (e) => {
       const transcript = e.results[e.results.length - 1][0].transcript.trim();
       setUserText(transcript);
       if (userdata?.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
+        stopListening();
         try {
           const res = await axios.post(
             "https://virt-assistant-1.onrender.com/api/assistant/ask",
@@ -106,14 +116,17 @@ function Home() {
           setHistory((prev) => [...prev, { user: transcript, ai: data.response }]);
           handleAction(data.type, data.userInput);
           speak(data.response, () => startListening());
-        } catch (err) {
+        } catch {
           speak("Sorry, something went wrong.", () => startListening());
         }
       }
     };
 
     startListening();
-    return () => recognition.stop();
+    return () => {
+      stopListening();
+      recognition = null;
+    };
   }, [userdata]);
 
   return (
@@ -127,7 +140,9 @@ function Home() {
             {history.map((item, index) => (
               <li key={index} className="bg-white/10 p-3 rounded-xl text-white">
                 <p className="text-yellow-300 text-sm italic">You: {item.user}</p>
-                <p className="text-green-300 text-sm mt-1">{userdata?.assistantName || "AI"}: {item.ai}</p>
+                <p className="text-green-300 text-sm mt-1">
+                  {userdata?.assistantName || "AI"}: {item.ai}
+                </p>
               </li>
             ))}
           </ul>
