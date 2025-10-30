@@ -15,7 +15,7 @@ function UserContext({ children }) {
 
   const handleCurrentUser = async () => {
     try {
-      const result = await axios.get(`${serverUrl}/api/user/current`, {
+      const result = await axios.get(`https://virt-assistant-1.onrender.com/api/user/current`, {
         withCredentials: true,
       });
       setuserdata(result.data);
