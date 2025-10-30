@@ -19,7 +19,7 @@ function SignUp() {
     setErr("")
     setloading(true)
     try {
-      let result = await axios.post(`${serverUrl}/api/auth/signup`, {
+      let result = await axios.post(`https://virt-assistant-1.onrender.com/api/auth/signup`, {
         name, email, password
       }, { withCredentials: true })
       setuserdata(result.data)
