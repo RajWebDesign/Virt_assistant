@@ -16,6 +16,10 @@ app.use(cors({
   credentials: true  
 }));
 
+app.get("/", (req, res) => {
+  res.send("Backend is running successfully 🚀");
+});
+
 const port = process.env.PORT || 8000
 
 app.use(express.json())
