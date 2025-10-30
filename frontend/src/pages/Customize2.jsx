@@ -37,7 +37,7 @@ function Customize2() {
       }
 
       const result = await axios.post(
-        `${serverUrl}/api/user/update`,
+        `https://virt-assistant-1.onrender.com/api/user/update`,
         formData,
         {
           withCredentials: true, 
