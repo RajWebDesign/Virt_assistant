@@ -15,10 +15,8 @@ function Home() {
   const [history, setHistory] = useState([]);
 
   const recognitionRef = useRef(null);
-  const startRecognitionRef = useRef(null);
-  const isRecognizingRef = useRef(false);
-  const isSpeakingRef = useRef(false);
   const synth = window.speechSynthesis;
+  const isSpeakingRef = useRef(false);
 
   const speak = (text) => {
     if (!text) return;
@@ -28,7 +26,7 @@ function Home() {
     utterance.onend = () => {
       isSpeakingRef.current = false;
       setTimeout(() => {
-        if (startRecognitionRef.current) startRecognitionRef.current();
+        startListening();
       }, 1000);
     };
     synth.speak(utterance);
@@ -36,104 +34,85 @@ function Home() {
 
   const handleSignOut = async () => {
     try {
-      await axios.get(`https://virt-assistant-1.onrender.com/api/auth/logout`, { withCredentials: true });
+      await axios.get("https://virt-assistant-1.onrender.com/api/auth/logout", { withCredentials: true });
       setuserdata(null);
       navigate("/signup");
-    } catch (error) {
+    } catch {
       setuserdata(null);
     }
   };
 
   const handleCustomize = () => navigate("/customize");
 
+  const startListening = () => {
+    const recognition = recognitionRef.current;
+    if (recognition) {
+      try {
+        recognition.start();
+      } catch (err) {
+        if (err.name !== "InvalidStateError") console.log(err);
+      }
+    }
+  };
+
+  const stopListening = () => {
+    const recognition = recognitionRef.current;
+    if (recognition) recognition.stop();
+  };
+
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+    if (!SpeechRecognition) {
+      console.log("Speech Recognition not supported");
+      return;
+    }
+
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.continuous = true;
     recognition.interimResults = false;
     recognitionRef.current = recognition;
 
-    const startRecognition = () => {
-      if (isRecognizingRef.current || isSpeakingRef.current) return;
-      try {
-        recognition.start();
-      } catch (e) {
-        if (e.name !== "InvalidStateError") console.log(e);
-      }
-    };
-    startRecognitionRef.current = startRecognition;
-
     recognition.onstart = () => {
-      isRecognizingRef.current = true;
       setListening(true);
     };
 
     recognition.onend = () => {
-      isRecognizingRef.current = false;
       setListening(false);
       if (!isSpeakingRef.current) {
-        setTimeout(() => startRecognition(), 1000);
+        setTimeout(() => startListening(), 1000);
       }
     };
 
     recognition.onerror = (event) => {
-      isRecognizingRef.current = false;
+      console.log("Speech error:", event.error);
       setListening(false);
-      if (event.error !== "aborted" && !isSpeakingRef.current) {
-        setTimeout(() => startRecognition(), 1500);
+      if (event.error !== "aborted") {
+        setTimeout(() => startListening(), 1500);
       }
     };
 
-    recognition.onresult = async (e) => {
-      const transcript = e.results[e.results.length - 1][0].transcript.trim();
+    recognition.onresult = async (event) => {
+      const transcript = event.results[event.results.length - 1][0].transcript.trim();
       setUserText(transcript);
 
       if (userdata?.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
-        let data = { type: "general", response: "Sorry I could not process that." };
         try {
-          data = await getGeminiResponse(transcript);
-          let parsedData;
-          try {
-            parsedData = typeof data === "string" ? JSON.parse(data) : data;
-          } catch {
-            parsedData = data;
-          }
-          setAiText(parsedData.response);
-          setHistory((prev) => [...prev, { user: transcript, ai: parsedData.response }]);
-          speak(parsedData.response);
-
-          switch (parsedData.type) {
-            case "instagram_open":
-              window.open("https://www.instagram.com", "_blank");
-              break;
-            case "facebook_open":
-              window.open("https://www.facebook.com", "_blank");
-              break;
-            case "youtube_search":
-              window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(parsedData.userInput || transcript)}`, "_blank");
-              break;
-            case "google_search":
-              window.open(`https://www.google.com/search?q=${encodeURIComponent(parsedData.userInput || transcript)}`, "_blank");
-              break;
-            case "weather_show":
-              window.open(`https://www.google.com/search?q=weather+${encodeURIComponent(parsedData.userInput || transcript)}`, "_blank");
-              break;
-            default:
-              break;
-          }
+          const data = await getGeminiResponse(transcript);
+          const response = data.response || "Sorry I could not process that.";
+          setAiText(response);
+          setHistory((prev) => [...prev, { user: transcript, ai: response }]);
+          speak(response);
         } catch (err) {
           console.log(err);
         }
       }
     };
 
-    startRecognition();
+    startListening();
 
     return () => {
-      recognition.stop();
-      isRecognizingRef.current = false;
+      stopListening();
     };
   }, [userdata]);
 
@@ -190,11 +169,7 @@ function Home() {
 
         <div className="text-center text-white mt-3">
           {userText && <p className="text-base italic text-yellow-300">You said: "{userText}"</p>}
-          {aiText && (
-            <p className="text-base text-green-300 mt-2">
-              {userdata?.assistantName || "AI"}: {aiText}
-            </p>
-          )}
+          {aiText && <p className="text-base text-green-300 mt-2">{userdata?.assistantName || "AI"}: {aiText}</p>}
         </div>
 
         <p className="text-white opacity-80 text-lg mt-2">
