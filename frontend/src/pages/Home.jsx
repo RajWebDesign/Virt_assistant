@@ -78,26 +78,35 @@ function Home() {
       setTimeout(() => startRecognition(), 500);
     };
 
-    recognition.onresult = async (e) => {
-      let transcript = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        transcript += e.results[i][0].transcript;
-      }
-      transcript = transcript.trim();
-      setUserText(transcript);
+recognition.onresult = async (e) => {
+  let transcript = "";
+  for (let i = e.resultIndex; i < e.results.length; i++) {
+    transcript += e.results[i][0].transcript;
+  }
+  
+  // Only handle final transcripts
+  const isFinal = e.results[e.results.length - 1].isFinal;
+  if (!isFinal) {
+    setUserText(transcript); // just update live transcript
+    return; // don't respond yet
+  }
 
-      if (userdata?.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
-        recognition.stop();
-        try {
-          const data = await getGeminiResponse(transcript);
-          setAiText(data.response);
-          setHistory((prev) => [...prev, { user: transcript, ai: data.response }]);
-          speak(data.response);
-        } catch (err) {
-          console.error("Gemini fetch error:", err);
-        }
-      }
-    };
+  transcript = transcript.trim();
+  setUserText(transcript);
+
+  if (userdata?.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
+    recognition.stop();
+    try {
+      const data = await getGeminiResponse(transcript);
+      setAiText(data.response);
+      setHistory((prev) => [...prev, { user: transcript, ai: data.response }]);
+      speak(data.response);
+    } catch (err) {
+      console.error("Gemini fetch error:", err);
+    }
+  }
+};
+
 
     startRecognition();
 
