@@ -27,7 +27,7 @@ function Home() {
       isSpeakingRef.current = false;
       setTimeout(() => {
         if (startRecognitionRef.current) startRecognitionRef.current();
-      }, 200);
+      }, 800);
     };
     synth.speak(utterance);
   };
