@@ -8,12 +8,10 @@ import userImg from "../assets/user.gif";
 function Home() {
   const { userdata, setuserdata, getGeminiResponse } = useContext(userDataContext);
   const navigate = useNavigate();
-
   const [userText, setUserText] = useState("");
   const [aiText, setAiText] = useState("");
   const [listening, setListening] = useState(false);
   const [history, setHistory] = useState([]);
-
   const recognitionRef = useRef(null);
   const isSpeakingRef = useRef(false);
   const synth = window.speechSynthesis;
@@ -35,7 +33,7 @@ function Home() {
       await axios.get(`https://virt-assistant-1.onrender.com/api/auth/logout`, { withCredentials: true });
       setuserdata(null);
       navigate("/signup");
-    } catch (error) {
+    } catch {
       setuserdata(null);
     }
   };
@@ -65,9 +63,11 @@ function Home() {
     recognition.continuous = true;
     recognition.interimResults = false;
     recognitionRef.current = recognition;
+    let restartTimeout;
 
     const startRecognition = () => {
       if (isSpeakingRef.current) return;
+      clearTimeout(restartTimeout);
       try {
         recognition.start();
         setListening(true);
@@ -76,26 +76,18 @@ function Home() {
       }
     };
 
-    recognition.onend = () => {
-      setListening(false);
-      if (!isSpeakingRef.current) {
-        setTimeout(() => startRecognition(), 800);
-      }
-    };
-
-    recognition.onerror = () => {
-      setListening(false);
-      setTimeout(() => startRecognition(), 1200);
+    const stopRecognitionTemporarily = () => {
+      try {
+        recognition.stop();
+        setListening(false);
+      } catch {}
     };
 
     recognition.onresult = async (e) => {
       const transcript = e.results[e.results.length - 1][0].transcript.trim();
       setUserText(transcript);
-
-      if (
-        userdata?.assistantName &&
-        transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())
-      ) {
+      if (userdata?.assistantName && transcript.toLowerCase().includes(userdata.assistantName.toLowerCase())) {
+        stopRecognitionTemporarily();
         handleOpenAction(transcript);
         try {
           const data = await getGeminiResponse(transcript);
@@ -103,15 +95,28 @@ function Home() {
           setAiText(response);
           setHistory((prev) => [...prev, { user: transcript, ai: response }]);
           speak(response, () => startRecognition());
-        } catch (err) {
-          console.log("Gemini error:", err);
+        } catch {
           speak("Sorry, there was a problem.", () => startRecognition());
         }
       }
     };
 
+    recognition.onerror = () => {
+      setListening(false);
+      restartTimeout = setTimeout(() => startRecognition(), 400);
+    };
+
+    recognition.onend = () => {
+      if (!isSpeakingRef.current) {
+        restartTimeout = setTimeout(() => startRecognition(), 300);
+      }
+    };
+
     startRecognition();
-    return () => recognition.stop();
+    return () => {
+      clearTimeout(restartTimeout);
+      recognition.stop();
+    };
   }, [userdata]);
 
   return (
@@ -125,15 +130,12 @@ function Home() {
             {history.map((item, index) => (
               <li key={index} className="bg-white/10 p-3 rounded-xl text-white">
                 <p className="text-yellow-300 text-sm italic">You: {item.user}</p>
-                <p className="text-green-300 text-sm mt-1">
-                  {userdata?.assistantName || "AI"}: {item.ai}
-                </p>
+                <p className="text-green-300 text-sm mt-1">{userdata?.assistantName || "AI"}: {item.ai}</p>
               </li>
             ))}
           </ul>
         )}
       </div>
-
       <div className="flex-1 flex flex-col justify-center items-center gap-6">
         <div className="absolute top-6 right-6 flex flex-col gap-4 items-end">
           <button onClick={handleCustomize} className="bg-white text-[#3b3bbd] font-semibold text-[17px] px-6 py-2 rounded-full shadow-md hover:bg-[#3b3bbd] hover:text-white transition-all duration-300">
@@ -143,26 +145,17 @@ function Home() {
             Sign Out
           </button>
         </div>
-
         <div className="w-[250px] h-[330px] flex justify-center items-center overflow-hidden rounded-[25px] shadow-xl border-2 border-white">
           <img src={userdata?.assistantImage} alt={userdata?.assistantName || "Assistant"} className="h-full object-cover" />
         </div>
-
-        <h1 className="text-white text-2xl font-semibold">
-          I am {userdata?.assistantName || "Your Virtual Assistant"}
-        </h1>
-
+        <h1 className="text-white text-2xl font-semibold">I am {userdata?.assistantName || "Your Virtual Assistant"}</h1>
         {!aiText && <img src={userImg} alt="" className="w-[80px]" />}
         {aiText && <img src={aiImg} alt="" className="w-[80px]" />}
-
         <div className="text-center text-white mt-3">
           {userText && <p className="text-base italic text-yellow-300">You said: "{userText}"</p>}
           {aiText && <p className="text-base text-green-300 mt-2">{userdata?.assistantName || "AI"}: {aiText}</p>}
         </div>
-
-        <p className="text-white opacity-80 text-lg mt-2">
-          {listening ? "Listening..." : "Inactive"}
-        </p>
+        <p className="text-white opacity-80 text-lg mt-2">{listening ? "Listening..." : "Inactive"}</p>
       </div>
     </div>
   );
