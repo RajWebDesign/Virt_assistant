@@ -12,7 +12,7 @@ import geminiResponse from './gemini.js'
 
 const app = express()
 app.use(cors({
-  origin: "virt-assistant.vercel.app",
+  origin: "https://virt-assistant.vercel.app",
   credentials: true  
 }));
 
